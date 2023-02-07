@@ -240,8 +240,8 @@ module w90_wannier90_types
 
   ! projections selection - overlap.F90
   ! REVIEW_2021-08-09: At first sight it might appear that select_projections should go in
-  ! REVIEW_2021-08-09: the proj_input_type container; but the way the code is structured
-  ! REVIEW_2021-08-09: makes this less appealing because there are two proj_input_type variables
+  ! REVIEW_2021-08-09: the proj_type container; but the way the code is structured
+  ! REVIEW_2021-08-09: makes this less appealing because there are two proj_type variables
   ! REVIEW_2021-08-09: proj_input and proj, the latter containing the subset of selected projections.
   ! REVIEW_2021-08-09: Perhaps best to keep it as currently coded (for now at least).
   type select_projection_type
@@ -252,6 +252,9 @@ module w90_wannier90_types
     !integer, save :: num_select_projections
     !integer, allocatable, save :: select_projections(:)
     integer, allocatable :: proj2wann_map(:)
+    logical :: auto_projections = .false.
+    !! a u t o m a t i c   p r o j e c t i o n s
+    ! vv: Writes a new block in .nnkp
   end type select_projection_type
 
   ! from sitesym

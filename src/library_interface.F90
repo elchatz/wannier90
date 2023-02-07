@@ -63,7 +63,7 @@ module w90_helper_types
     type(dis_spheres_type) :: dis_spheres
     type(ham_logical_type) :: ham_logical
     type(output_file_type) :: output_file
-    type(proj_input_type) :: proj
+    type(proj_type), allocatable :: proj(:)
     type(real_space_ham_type) :: real_space_ham
     type(select_projection_type) :: select_proj
     type(sitesym_type) :: sitesym
@@ -476,8 +476,8 @@ contains
     ierr = 0
 
     if (mpirank(comm) == 0) then
-      call kmesh_write(helper%exclude_bands, helper%kmesh_info, wan90%proj, helper%print_output, &
-                       helper%kpt_latt, helper%real_lattice, helper%num_kpts, wan90%num_proj, &
+      call kmesh_write(helper%exclude_bands, helper%kmesh_info, wan90%select_proj, wan90%proj, &
+                       helper%print_output, helper%kpt_latt, helper%real_lattice, helper%num_kpts, &
                        calc_only_A, helper%w90_system%spinors, seedname, helper%timer)
       if (allocated(error)) then
         call prterr(error, ierr, istdout, istderr, comm)
