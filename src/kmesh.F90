@@ -739,8 +739,8 @@ contains
   end subroutine kmesh_get
 
   !================================================!
-  subroutine kmesh_write(exclude_bands, kmesh_info, proj, print_output, kpt_latt, &
-                         real_lattice, num_kpts, num_proj, calc_only_A, spinors, seedname, timer)
+  subroutine kmesh_write(exclude_bands, kmesh_info, select_proj, proj, print_output, kpt_latt, &
+                         real_lattice, num_kpts, calc_only_A, spinors, seedname, timer)
     !==================================================================!
     !                                                                  !
     !! Writes nnkp file (list of overlaps needed)
@@ -773,18 +773,19 @@ contains
     use w90_io, only: io_date, io_stopwatch_start, io_stopwatch_stop
     use w90_utility, only: utility_recip_lattice_base
     use w90_types, only: kmesh_info_type, kmesh_input_type, &
-      proj_input_type, print_output_type, timer_list_type
+      proj_type, print_output_type, timer_list_type
+    use w90_wannier90_types, only: select_projection_type
 
     implicit none
 
     integer, allocatable, intent(in) :: exclude_bands(:)
     type(print_output_type), intent(in) :: print_output
     type(kmesh_info_type), intent(in) :: kmesh_info
-    type(proj_input_type), intent(in) :: proj
+    type(proj_type), allocatable, intent(in) :: proj(:)
+    type(select_projection_type), intent(in) :: select_proj
     type(timer_list_type), intent(inout) :: timer
 
     integer, intent(in) :: num_kpts
-    integer, intent(inout) :: num_proj
     real(kind=dp), intent(in) :: kpt_latt(:, :)
     real(kind=dp), intent(in) :: real_lattice(3, 3)
     logical, intent(in) :: calc_only_A
@@ -792,8 +793,15 @@ contains
     character(len=*), intent(in)  :: seedname
 
     real(kind=dp) :: recip_lattice(3, 3), volume
-    integer           :: i, nkp, nn, nnkpout, num_exclude_bands
+    integer :: i, nkp, nn, nnkpout, num_exclude_bands
+    integer :: num_proj
     character(len=9) :: cdate, ctime
+
+    if (allocated(proj)) then
+      num_proj = size(proj) ! number of projectors tabulated
+    else
+      num_proj = 0
+    endif
 
     if (print_output%timing_level > 0) call io_stopwatch_start('kmesh: write', timer)
 
@@ -832,48 +840,39 @@ contains
     if (spinors) then
       ! Projections
       write (nnkpout, '(a)') 'begin spinor_projections'
-      if (allocated(proj%site)) then
-        write (nnkpout, '(i6)') num_proj
-        do i = 1, num_proj
-          write (nnkpout, '(3(f10.5,1x),2x,3i3)') &
-            proj%site(1, i), proj%site(2, i), proj%site(3, i), &
-            proj%l(i), proj%m(i), proj%radial(i)
-          write (nnkpout, '(2x,3f11.7,1x,3f11.7,1x,f7.2)') &
-            proj%z(1, i), proj%z(2, i), proj%z(3, i), &
-            proj%x(1, i), proj%x(2, i), proj%x(3, i), &
-            proj%zona(i)
-          write (nnkpout, '(2x,1i3,1x,3f11.7)') &
-            proj%s(i), &
-            proj%s_qaxis(1, i), proj%s_qaxis(2, i), proj%s_qaxis(3, i)
-        enddo
-      else
-        ! No projections
-        write (nnkpout, '(i6)') 0
-      end if
+      write (nnkpout, '(i6)') num_proj
+      do i = 1, num_proj
+        write (nnkpout, '(3(f10.5,1x),2x,3i3)') &
+          proj(i)%site(1), proj(i)%site(2), proj(i)%site(3), &
+          proj(i)%l, proj(i)%m, proj(i)%radial
+        write (nnkpout, '(2x,3f11.7,1x,3f11.7,1x,f7.2)') &
+          proj(i)%z(1), proj(i)%z(2), proj(i)%z(3), &
+          proj(i)%x(1), proj(i)%x(2), proj(i)%x(3), &
+          proj(i)%zona
+        write (nnkpout, '(2x,1i3,1x,3f11.7)') &
+          proj(i)%s, &
+          proj(i)%s_qaxis(1), proj(i)%s_qaxis(2), proj(i)%s_qaxis(3)
+      enddo
       write (nnkpout, '(a/)') 'end spinor_projections'
     else
       ! Projections
       write (nnkpout, '(a)') 'begin projections'
-      if (allocated(proj%site)) then
-        write (nnkpout, '(i6)') num_proj
-        do i = 1, num_proj
-          write (nnkpout, '(3(f10.5,1x),2x,3i3)') &
-            proj%site(1, i), proj%site(2, i), proj%site(3, i), &
-            proj%l(i), proj%m(i), proj%radial(i)
-          write (nnkpout, '(2x,3f11.7,1x,3f11.7,1x,f7.2)') &
-            proj%z(1, i), proj%z(2, i), proj%z(3, i), &
-            proj%x(1, i), proj%x(2, i), proj%x(3, i), &
-            proj%zona(i)
-        enddo
-      else
-        ! No projections
-        write (nnkpout, '(i6)') 0
-      end if
+      write (nnkpout, '(i6)') num_proj
+      do i = 1, num_proj
+        write (nnkpout, '(3(f10.5,1x),2x,3i3)') &
+          proj(i)%site(1), proj(i)%site(2), proj(i)%site(3), &
+          proj(i)%l, proj(i)%m, proj(i)%radial
+        write (nnkpout, '(2x,3f11.7,1x,3f11.7,1x,f7.2)') &
+          proj(i)%z(1), proj(i)%z(2), proj(i)%z(3), &
+          proj(i)%x(1), proj(i)%x(2), proj(i)%x(3), &
+          proj(i)%zona
+      enddo
       write (nnkpout, '(a/)') 'end projections'
     endif
 
     ! Info for automatic generation of projections
-    if (proj%auto_projections) then
+    ! fixme(jj) what is the size of num_proj here
+    if (select_proj%auto_projections) then
       write (nnkpout, '(a)') 'begin auto_projections'
       write (nnkpout, '(i6)') num_proj
       write (nnkpout, '(i6)') 0

@@ -24,7 +24,7 @@ module w90_postw90_readwrite
   use w90_constants, only: dp, maxlen
   use w90_types, only: print_output_type, print_output_type, wannier_data_type, &
     kmesh_input_type, kmesh_info_type, dis_manifold_type, atom_data_type, kpoint_path_type, &
-    proj_input_type, w90_system_type, ws_region_type, settings_type
+    w90_system_type, ws_region_type, settings_type
   use w90_readwrite
   use w90_postw90_types
   use w90_error, only: w90_error_type, set_error_alloc, set_error_dealloc, set_error_fatal, &
@@ -2491,7 +2491,7 @@ contains
   !================================================!
   subroutine w90_postw90_readwrite_dealloc(exclude_bands, wannier_data, kmesh_input, kpt_latt, &
                                            dis_manifold, fermi_energy_list, atom_data, eigval, &
-                                           kpoint_path, pw90_dos, pw90_berry, proj_input, error, &
+                                           kpoint_path, pw90_dos, pw90_berry, error, &
                                            comm)
     !================================================!
 
@@ -2502,7 +2502,6 @@ contains
 
     type(wannier_data_type), intent(inout) :: wannier_data
     type(kmesh_input_type), intent(inout) :: kmesh_input
-    type(proj_input_type), intent(inout) :: proj_input
     type(dis_manifold_type), intent(inout) :: dis_manifold
     type(atom_data_type), intent(inout) :: atom_data
     type(kpoint_path_type), intent(inout) :: kpoint_path
@@ -2518,7 +2517,7 @@ contains
 
     integer :: ierr
 
-    call w90_readwrite_dealloc(exclude_bands, wannier_data, proj_input, kmesh_input, kpt_latt, &
+    call w90_readwrite_dealloc(exclude_bands, wannier_data, kmesh_input, kpt_latt, &
                                dis_manifold, atom_data, eigval, kpoint_path, error, comm)
     if (allocated(error)) return
     if (allocated(pw90_dos%project)) then
