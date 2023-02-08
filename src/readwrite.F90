@@ -77,6 +77,7 @@ module w90_readwrite
 
   public :: expand_settings
   public :: init_settings
+  public :: destruc_settings
 
 contains
   !================================================!
@@ -144,7 +145,7 @@ contains
 
     call w90_readwrite_get_keyword(settings, 'length_unit', found, error, comm, c_value=length_unit)
     if (allocated(error)) return
-    if (length_unit .ne. 'ang' .and. length_unit .ne. 'bohr') then
+    if (length_unit .ne. 'ang' .and. length_unit .ne. 'bohr' .and. length_unit .ne. 'Ang' .and. length_unit .ne. 'Bohr') then
       call set_error_input(error, 'Error: value of length_unit not recognised in w90_readwrite_read_units', comm)
       return
     else if (length_unit .eq. 'bohr') then
@@ -275,11 +276,9 @@ contains
     endif
   end subroutine w90_readwrite_read_gamma_only
 
-  subroutine w90_readwrite_read_mp_grid(settings, pw90_effective_model, mp_grid, num_kpts, error, &
-                                        comm)
+  subroutine w90_readwrite_read_mp_grid(settings, mp_grid, num_kpts, error, comm)
     use w90_error, only: w90_error_type, set_error_input
     implicit none
-    logical, intent(in) :: pw90_effective_model
     integer, intent(inout) :: mp_grid(3), num_kpts
     type(w90_error_type), allocatable, intent(out) :: error
     type(w90_comm_type), intent(in) :: comm
@@ -288,22 +287,18 @@ contains
     integer :: iv_temp(3)
     logical :: found
 
-    !fixme(jj) more pw90_effective_model issues!
-
     call w90_readwrite_get_keyword_vector(settings, 'mp_grid', found, 3, error, comm, &
                                           i_value=iv_temp)
     if (allocated(error)) return
-    if (.not. pw90_effective_model) then
-      if (found) mp_grid = iv_temp
-      if (.not. found) then
-        call set_error_input(error, 'Error: You must specify dimensions of the Monkhorst-Pack grid by setting mp_grid', comm)
-        return
-      elseif (any(mp_grid < 1)) then
-        call set_error_input(error, 'Error: mp_grid must be greater than zero', comm)
-        return
-      end if
-      num_kpts = mp_grid(1)*mp_grid(2)*mp_grid(3)
+    if (found) mp_grid = iv_temp
+    if (.not. found) then
+      call set_error_input(error, 'Error: You must specify dimensions of the Monkhorst-Pack grid by setting mp_grid', comm)
+      return
+    elseif (any(mp_grid < 1)) then
+      call set_error_input(error, 'Error: mp_grid must be greater than zero', comm)
+      return
     end if
+    num_kpts = mp_grid(1)*mp_grid(2)*mp_grid(3)
   end subroutine w90_readwrite_read_mp_grid
 
   subroutine w90_readwrite_read_system(settings, w90_system, error, comm)
@@ -729,7 +724,8 @@ contains
 
   subroutine w90_readwrite_read_kpoints(settings, pw90_effective_model, kpt_latt, num_kpts, bohr, &
                                         error, comm)
-    use w90_error, only: w90_error_type, set_error_input, set_error_alloc, set_error_dealloc
+    use w90_error, only: w90_error_type, set_error_input, set_error_alloc, set_error_dealloc, &
+      set_error_fatal
     implicit none
 
     integer, intent(in) :: num_kpts
@@ -747,6 +743,12 @@ contains
     !fixme jj, this routine needs saving from pw90_effective_model
 
     ierr = 0
+
+    if (num_kpts < 1) then
+      call set_error_fatal(error, 'Error null kmesh in w90_readwrite_read_kpoints', comm)
+      return
+    endif
+
     if (.not. pw90_effective_model) then
       allocate (kpt_cart(3, num_kpts), stat=ierr)
       if (ierr /= 0) then
@@ -788,10 +790,14 @@ contains
     endif
   end subroutine w90_readwrite_read_kpoints
 
-  subroutine w90_readwrite_read_lattice(settings, real_lattice, bohr, error, comm)
+  subroutine w90_readwrite_read_lattice(settings, real_lattice, recip_lattice, bohr, error, comm)
     use w90_error, only: w90_error_type, set_error_input
+    use w90_utility, only: utility_recip_lattice
+
     implicit none
+
     real(kind=dp), intent(out) :: real_lattice(3, 3)
+    real(kind=dp), intent(out) :: recip_lattice(3, 3)
     real(kind=dp) :: real_lattice_tmp(3, 3)
     real(kind=dp), intent(in) :: bohr
     type(w90_error_type), allocatable, intent(out) :: error
@@ -799,6 +805,11 @@ contains
     type(settings_type), intent(inout) :: settings
 
     logical :: found
+    real(kind=dp) :: volume
+
+    !fixme(jj) important
+    ! cell vectors passed to the lib interface are also transposed here.
+    ! need to ensure this ok
 
     call w90_readwrite_get_keyword_block(settings, 'unit_cell_cart', found, 3, 3, bohr, error, &
                                          comm, r_value=real_lattice_tmp)
@@ -808,6 +819,7 @@ contains
       call set_error_input(error, 'Error: Did not find the cell information in the input file', comm)
       return
     endif
+    call utility_recip_lattice(real_lattice, recip_lattice, volume, error, comm)
   end subroutine w90_readwrite_read_lattice
 
   subroutine w90_readwrite_read_atoms(settings, atom_data, real_lattice, bohr, error, comm)
@@ -2221,14 +2233,15 @@ contains
   end subroutine w90_readwrite_in_file
 
   !================================================!
-  subroutine w90_readwrite_get_keyword(settings, keyword, found, error, comm, c_value, l_value, i_value, r_value)
+  subroutine w90_readwrite_get_keyword(settings, keyword, found, error, comm, c_value, l_value, &
+                                       i_value, r_value)
     !================================================!
     !
     !! Finds the value of the required keyword.
     !
     !================================================!
 
-    use w90_error, only: w90_error_type, set_error_input
+    use w90_error, only: w90_error_type, set_error_input, set_error_fatal
 
     implicit none
 
@@ -2256,8 +2269,8 @@ contains
     found = .false.
 
     if (allocated(settings%entries) .and. allocated(settings%in_data)) then
-      !fixme(jj) implement an error here
-      !error condition
+      call set_error_fatal(error, 'Clash in settings; both options and infile data present', comm)
+      return
     elseif (allocated(settings%entries)) then
       do loop = 1, settings%num_entries  ! this means the first occurance of the variable in settings is used
         ! memory beyond num_entries is not initialised
@@ -4176,6 +4189,7 @@ contains
     end if ! found tags
   end subroutine clear_block
 
+  ! fixme(jj) these are clunky
   subroutine init_settings(settings)
     implicit none
     type(settings_type), intent(inout) :: settings
@@ -4184,6 +4198,15 @@ contains
     settings%num_entries = 0
     settings%num_entries_max = defsize
   end subroutine init_settings
+
+  subroutine destruc_settings(settings)
+    implicit none
+    type(settings_type), intent(inout) :: settings
+    integer, parameter :: defsize = 20 ! default size of settings array
+    deallocate (settings%entries)
+    settings%num_entries = 0
+    settings%num_entries_max = defsize
+  end subroutine destruc_settings
 
   subroutine expand_settings(settings) ! this is a compromise to avoid a fixed size
     type(settings_data), allocatable :: nentries(:); 

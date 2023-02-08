@@ -121,6 +121,7 @@ module w90_helper_types
   public :: wannierise
   public :: write_chkpt
   public :: write_kmesh
+  public :: set_io_seedname
 
   public :: set_option ! interface for setting vars using library
   interface set_option
@@ -136,6 +137,11 @@ module w90_helper_types
   end interface set_option
 
 contains
+  subroutine set_io_seedname(helper, fn)
+    type(lib_global_type), intent(inout) :: helper
+    character(len=*), intent(in) :: fn
+    helper%seedname = fn
+  end subroutine set_io_seedname
 
   subroutine get_fortran_stdout(istdout)
     use iso_fortran_env, only: output_unit
@@ -161,7 +167,7 @@ contains
     open (newunit=output, file=name, form='formatted', status='unknown')
   end subroutine get_fortran_file
 
-  subroutine write_chkpt(helper, wan90, label, seedname, istdout, istderr, ierr, comm)
+  subroutine write_chkpt(helper, wan90, label, istdout, istderr, ierr, comm)
     use w90_wannier90_readwrite, only: w90_wannier90_readwrite_write_chkpt
     use w90_comms, only: comms_reduce, mpirank, w90_comm_type
     use w90_error_base, only: w90_error_type
@@ -171,7 +177,6 @@ contains
 
     ! arguments
     character(len=*), intent(in) :: label ! e.g. 'postdis' or 'postwann' after disentanglement, wannierisation
-    character(len=*), intent(in) :: seedname
     integer, intent(in) :: istdout, istderr
     integer, intent(inout) :: ierr
     type(lib_global_type), target, intent(in) :: helper
@@ -247,14 +252,14 @@ contains
                                                helper%dis_manifold, nb, nw, u, uopt, m, &
                                                helper%mp_grid, helper%real_lattice, &
                                                wan90%omega%invariant, helper%have_disentangled, &
-                                               istdout, seedname)
+                                               istdout, helper%seedname)
     endif
     deallocate (u)
     deallocate (uopt)
     deallocate (m)
   end subroutine write_chkpt
 
-  subroutine read_chkpt(helper, wan90, checkpoint, seedname, istdout, istderr, ierr, comm)
+  subroutine read_chkpt(helper, wan90, checkpoint, istdout, istderr, ierr, comm)
     use w90_comms, only: w90_comm_type, mpirank
     use w90_error_base, only: w90_error_type
     use w90_readwrite, only: w90_readwrite_read_chkpt, w90_readwrite_chkpt_dist
@@ -262,7 +267,6 @@ contains
     implicit none
 
     ! arguments
-    character(len=*), intent(in) :: seedname
     character(len=*), intent(out) :: checkpoint
     integer, intent(in) :: istdout, istderr
     integer, intent(out) :: ierr
@@ -300,7 +304,7 @@ contains
                                     helper%wannier_data, m, helper%u_matrix, helper%u_opt, &
                                     helper%real_lattice, wan90%omega%invariant, helper%mp_grid, nb, &
                                     nexclude, nk, nw, checkpoint, &
-                                    helper%have_disentangled, ispostw90, seedname, istdout, error, comm)
+                                    helper%have_disentangled, ispostw90, helper%seedname, istdout, error, comm)
       if (allocated(error)) then
         call prterr(error, ierr, istdout, istderr, comm)
         return
@@ -320,9 +324,11 @@ contains
     deallocate (m)
   end subroutine read_chkpt
 
-  subroutine input_setopt(helper, wan90, seedname, istdout, istderr, ierr, comm)
-    use w90_readwrite, only: w90_readwrite_uppercase, w90_readwrite_read_final_alloc
-    use w90_wannier90_readwrite, only: w90_wannier90_readwrite_read, w90_extra_io_type
+  subroutine input_setopt(helper, wan90, istdout, istderr, ierr, comm)
+    use w90_readwrite, only: w90_readwrite_uppercase, w90_readwrite_read_final_alloc, &
+      w90_readwrite_clean_infile, destruc_settings
+    use w90_wannier90_readwrite, only: w90_wannier90_readwrite_read, &
+      w90_wannier90_readwrite_read_special, w90_extra_io_type
     use w90_error_base, only: w90_error_type
     !use w90_error, only: set_error_input, set_error_fatal
     use w90_comms, only: w90_comm_type, mpirank, comms_sync_err
@@ -330,7 +336,6 @@ contains
     implicit none
 
     ! arguments
-    character(len=*), intent(in) :: seedname
     integer, intent(in) :: istdout, istderr
     integer, intent(out) :: ierr
     type(lib_global_type), intent(inout) :: helper
@@ -339,10 +344,44 @@ contains
 
     ! local
     type(w90_error_type), allocatable :: error
-    type(w90_extra_io_type) :: io_params
     logical :: cp_pp, disentanglement
+    type(w90_extra_io_type) :: io_params ! fixme(jj) what is in this?
+
+    ! small nightmare
+    ! specific variables are necessary and must be specified
+    ! their absence is an error
+    ! and they cannot be safely changed once set (various allocs done etc)
+    ! therefore: the parsing for these tokens should only be done once
+    ! right now: either via input_setopt or read_input, whichever comes first
+    ! (once set, keyinput becomes T)
+    logical, save :: keyinput = .false.
 
     ierr = 0
+
+    if (.not. keyinput) then
+      call w90_wannier90_readwrite_read_special(helper%settings, helper%atom_data, wan90%band_plot, wan90%dis_control, &
+                                                wan90%dis_spheres, helper%dis_manifold, &
+                                                helper%exclude_bands, helper%fermi_energy_list, &
+                                                wan90%fermi_surface_data, helper%kmesh_input, &
+                                                helper%kmesh_info, helper%kpt_latt, wan90%output_file, &
+                                                wan90%wvfn_read, wan90%wann_control, wan90%proj, &
+                                                wan90%real_space_ham, wan90%select_proj, &
+                                                helper%kpoint_path, helper%w90_system, wan90%tran, &
+                                                helper%print_output, wan90%wann_plot, io_params, &
+                                                helper%ws_region, wan90%w90_calculation, &
+                                                helper%real_lattice, helper%physics%bohr, &
+                                                wan90%sitesym%symmetrize_eps, helper%mp_grid, &
+                                                helper%num_bands, helper%num_kpts, wan90%num_proj, &
+                                                helper%num_wann, wan90%optimisation, wan90%calc_only_A, &
+                                                cp_pp, helper%gamma_only, wan90%lhasproj, &
+                                                wan90%lsitesymmetry, wan90%use_bloch_phases, helper%seedname, &
+                                                istdout, error, comm)
+      if (allocated(error)) then
+        call prterr(error, ierr, istdout, istderr, comm)
+        return
+      endif
+      keyinput = .true.
+    endif
 
     call w90_wannier90_readwrite_read(helper%settings, helper%atom_data, wan90%band_plot, wan90%dis_control, &
                                       wan90%dis_spheres, helper%dis_manifold, &
@@ -359,7 +398,7 @@ contains
                                       helper%num_bands, helper%num_kpts, wan90%num_proj, &
                                       helper%num_wann, wan90%optimisation, wan90%calc_only_A, &
                                       cp_pp, helper%gamma_only, wan90%lhasproj, &
-                                      wan90%lsitesymmetry, wan90%use_bloch_phases, seedname, &
+                                      wan90%lsitesymmetry, wan90%use_bloch_phases, helper%seedname, &
                                       istdout, error, comm)
     if (allocated(error)) then
       call prterr(error, ierr, istdout, istderr, comm)
@@ -379,12 +418,23 @@ contains
         return
       endif
     endif
-    helper%seedname = seedname ! maybe not keep this separate from "blob"? JJ
 
     if (mpirank(comm) /= 0) helper%print_output%iprint = 0 ! supress printing non-rank-0
+
+    ! clear input settings
+    if (allocated(helper%settings%entries)) call destruc_settings(helper%settings)
+
+    ! (alternatively) clear input file
+    if (allocated(helper%settings%in_data)) then
+      call w90_readwrite_clean_infile(helper%settings, istdout, helper%seedname, error, comm)
+      if (allocated(error)) then
+        call prterr(error, ierr, istdout, istderr, comm)
+        return
+      endif
+    endif
   end subroutine input_setopt
 
-  subroutine input_reader(helper, wan90, seedname, istdout, istderr, ierr, comm)
+  subroutine input_reader(helper, wan90, istdout, istderr, ierr, comm)
     use w90_readwrite, only: w90_readwrite_in_file, w90_readwrite_uppercase, &
       w90_readwrite_clean_infile, w90_readwrite_read_final_alloc
     use w90_wannier90_readwrite, only: w90_wannier90_readwrite_read, w90_extra_io_type
@@ -395,7 +445,6 @@ contains
     implicit none
 
     ! arguments
-    character(len=*), intent(in) :: seedname
     integer, intent(in) :: istdout, istderr
     integer, intent(out) :: ierr
     type(lib_global_type), intent(inout) :: helper
@@ -408,13 +457,13 @@ contains
 
     ierr = 0
 
-    call w90_readwrite_in_file(helper%settings, seedname, error, comm)
+    call w90_readwrite_in_file(helper%settings, helper%seedname, error, comm)
     if (allocated(error)) then
       call prterr(error, ierr, istdout, istderr, comm)
       return
     endif
 
-    call input_setopt(helper, wan90, seedname, istdout, istderr, ierr, comm)
+    call input_setopt(helper, wan90, istdout, istderr, ierr, comm)
     if (ierr /= 0) then
       return
     endif
@@ -433,12 +482,6 @@ contains
       return
     endif
     !!!!! end unlucky code
-
-    call w90_readwrite_clean_infile(helper%settings, istdout, seedname, error, comm)
-    if (allocated(error)) then
-      call prterr(error, ierr, istdout, istderr, comm)
-      return
-    endif
   end subroutine input_reader
 
   subroutine create_kmesh(helper, istdout, istderr, ierr, comm)
@@ -467,7 +510,7 @@ contains
     endif
   end subroutine create_kmesh
 
-  subroutine write_kmesh(helper, wan90, seedname, istdout, istderr, ierr, comm)
+  subroutine write_kmesh(helper, wan90, istdout, istderr, ierr, comm)
     use w90_kmesh, only: kmesh_get, kmesh_write
     use w90_error_base, only: w90_error_type
     use w90_comms, only: w90_comm_type, mpirank, comms_sync_err
@@ -475,7 +518,6 @@ contains
     implicit none
 
     ! arguments
-    character(len=*), intent(in) :: seedname ! needed for nnkp filename
     integer, intent(in) :: istdout, istderr
     integer, intent(out) :: ierr
     type(lib_global_type), intent(inout) :: helper
@@ -491,7 +533,7 @@ contains
     if (mpirank(comm) == 0) then
       call kmesh_write(helper%exclude_bands, helper%kmesh_info, wan90%select_proj, wan90%proj, &
                        helper%print_output, helper%kpt_latt, helper%real_lattice, helper%num_kpts, &
-                       calc_only_A, helper%w90_system%spinors, seedname, helper%timer)
+                       calc_only_A, helper%w90_system%spinors, helper%seedname, helper%timer)
       if (allocated(error)) then
         call prterr(error, ierr, istdout, istderr, comm)
         return
@@ -1084,7 +1126,7 @@ contains
   ! this routine needs revising/moving fixme(jj)
   ! this routine assigns to the array passed as an argument, not to the internal module pointer
   ! this array must subsequently be the subject of associating the internal module pointer
-  subroutine read_eigvals(w90main, w90dat, eigval, seedname, istdout, istderr, ierr, comm)
+  subroutine read_eigvals(w90main, w90dat, eigval, istdout, istderr, ierr, comm)
     use w90_comms, only: w90_comm_type
     use w90_error, only: w90_error_type, set_error_fatal
     use w90_readwrite, only: w90_readwrite_read_eigvals
@@ -1092,7 +1134,6 @@ contains
     implicit none
 
     ! arguments
-    character(len=*), intent(in) :: seedname
     integer, intent(in) :: istdout, istderr
     real(kind=dp), intent(inout) :: eigval(:, :)
     type(lib_global_type), intent(inout) :: w90main
@@ -1117,7 +1158,7 @@ contains
     endif
 
     call w90_readwrite_read_eigvals(eig_found, eigval, w90main%num_bands, w90main%num_kpts, &
-                                    istdout, seedname, error, comm)
+                                    istdout, w90main%seedname, error, comm)
     if (allocated(error)) then
       call prterr(error, ierr, istdout, istderr, comm)
       return

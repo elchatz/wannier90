@@ -83,7 +83,11 @@ program libv2
   ! open main error file
   open (newunit=stderr, file=fn//'.werr', status="replace")
 
-  call input_reader(w90main, w90dat, fn, stdout, stderr, ierr, comm)
+  ! set seedname for io
+  call set_io_seedname(w90main, fn)
+
+  ! read the .win file
+  call input_reader(w90main, w90dat, stdout, stderr, ierr, comm)
   if (ierr /= 0) stop
 
   ! write jazzy header info
@@ -114,7 +118,7 @@ program libv2
   ! special branch for writing nnkp file
   if (pp) then
     ! please only invoke on rank 0
-    call write_kmesh(w90main, w90dat, fn, stdout, stderr, ierr, comm)
+    call write_kmesh(w90main, w90dat, stdout, stderr, ierr, comm)
     if (ierr /= 0) stop
     if (rank == 0) close (unit=stderr, status='delete')
 #ifdef MPI
@@ -153,7 +157,7 @@ program libv2
     if (rank == 0) write (stdout, '(1x,a/)') 'Starting a new Wannier90 calculation ...'
   else
     cpstatus = ''
-    call read_chkpt(w90main, w90dat, cpstatus, fn, stdout, stderr, ierr, comm)
+    call read_chkpt(w90main, w90dat, cpstatus, stdout, stderr, ierr, comm)
     if (ierr /= 0) stop
 
     if (restart == 'wannierise' .or. (restart == 'default' .and. cpstatus == 'postdis')) then
@@ -201,7 +205,7 @@ program libv2
 
   if (need_eigvals) then
     allocate (eigval(nb, nk))
-    call read_eigvals(w90main, w90dat, eigval, fn, stdout, stderr, ierr, comm)
+    call read_eigvals(w90main, w90dat, eigval, stdout, stderr, ierr, comm)
     if (ierr /= 0) stop
     call set_eigval(w90main, eigval)
   endif
@@ -221,14 +225,14 @@ program libv2
   if (ldsnt) then
     call disentangle(w90main, w90dat, stdout, stderr, ierr, comm)
     if (ierr /= 0) stop
-    call write_chkpt(w90main, w90dat, 'postdis', fn, stdout, stderr, ierr, comm)
+    call write_chkpt(w90main, w90dat, 'postdis', stdout, stderr, ierr, comm)
     if (ierr /= 0) stop
   endif
 
   if (lwann) then
     call wannierise(w90main, w90dat, stdout, stderr, ierr, comm)
     if (ierr /= 0) stop
-    call write_chkpt(w90main, w90dat, 'postwann', fn, stdout, stderr, ierr, comm)
+    call write_chkpt(w90main, w90dat, 'postwann', stdout, stderr, ierr, comm)
     if (ierr /= 0) stop
   endif
 

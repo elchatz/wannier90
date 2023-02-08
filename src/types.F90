@@ -250,7 +250,7 @@ module w90_types
     integer :: num_entries = 0, num_entries_max = 0 ! number of keywords stored and max
     type(settings_data), allocatable :: entries(:)
     ! data for processing input file
-    integer :: num_lines
+    integer :: num_lines ! number of lines read
     character(len=maxlen), allocatable :: in_data(:) ! contents of .win file
   end type settings_type
 

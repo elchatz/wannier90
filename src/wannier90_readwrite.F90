@@ -41,11 +41,156 @@ module w90_wannier90_readwrite
   public :: w90_wannier90_readwrite_dist
   public :: w90_wannier90_readwrite_memory_estimate
   public :: w90_wannier90_readwrite_read
+  public :: w90_wannier90_readwrite_read_special
   public :: w90_wannier90_readwrite_w90_dealloc
   public :: w90_wannier90_readwrite_write
   public :: w90_wannier90_readwrite_write_chkpt
 
 contains
+
+  !================================================!
+  subroutine w90_wannier90_readwrite_read_special(settings, atom_data, band_plot, dis_control, dis_spheres, &
+                                                  dis_manifold, exclude_bands, fermi_energy_list, &
+                                                  fermi_surface_data, kmesh_input, kmesh_info, kpt_latt, &
+                                                  output_file, wvfn_read, wann_control, proj, &
+                                                  real_space_ham, select_proj, kpoint_path, w90_system, &
+                                                  tran, print_output, wann_plot, w90_extra_io, ws_region, &
+                                                  w90_calculation, real_lattice, bohr, &
+                                                  symmetrize_eps, mp_grid, num_bands, num_kpts, num_proj, &
+                                                  num_wann, optimisation, calc_only_A, cp_pp, &
+                                                  gamma_only, lhasproj, lsitesymmetry, use_bloch_phases, &
+                                                  seedname, stdout, error, comm)
+    !================================================!
+    !
+    !! Read parameters and calculate derived values
+    !!
+    !! Note on parallelization: this function should be called
+    !! from the root node only!
+    !!
+    !
+    !================================================
+
+    use w90_constants, only: w90_physical_constants_type
+    use w90_utility, only: utility_recip_lattice, utility_inverse_mat
+
+    implicit none
+
+    ! arguments
+    type(atom_data_type), intent(inout) :: atom_data
+    type(band_plot_type), intent(inout) :: band_plot
+    type(dis_control_type), intent(inout) :: dis_control
+    type(dis_manifold_type), intent(inout) :: dis_manifold
+    type(dis_spheres_type), intent(inout) :: dis_spheres
+    type(fermi_surface_plot_type), intent(inout) :: fermi_surface_data
+    type(kmesh_info_type), intent(inout) :: kmesh_info
+    type(kmesh_input_type), intent(inout) :: kmesh_input
+    type(kpoint_path_type), intent(inout) :: kpoint_path
+    type(output_file_type), intent(inout) :: output_file
+    type(print_output_type), intent(inout) :: print_output
+    type(proj_type), allocatable, intent(inout) :: proj(:)
+    type(real_space_ham_type), intent(inout) :: real_space_ham
+    type(select_projection_type), intent(inout) :: select_proj
+    type(settings_type), intent(inout) :: settings
+    type(transport_type), intent(inout) :: tran
+    type(w90_calculation_type), intent(inout) :: w90_calculation
+    type(w90_comm_type), intent(in) :: comm
+    type(w90_error_type), allocatable, intent(out) :: error
+    type(w90_extra_io_type), intent(inout) :: w90_extra_io
+    type(w90_system_type), intent(inout) :: w90_system
+    type(wann_control_type), intent(inout) :: wann_control
+    type(wannier_plot_type), intent(inout) :: wann_plot
+    type(ws_region_type), intent(inout) :: ws_region
+    type(wvfn_read_type), intent(inout) :: wvfn_read
+
+    integer, allocatable, intent(inout) :: exclude_bands(:)
+    integer, intent(inout) :: mp_grid(3)
+    integer, intent(inout) :: num_bands
+    integer, intent(inout) :: num_kpts
+    integer, intent(inout) :: num_proj
+    integer, intent(inout) :: num_wann
+    integer, intent(inout) :: optimisation
+    integer, intent(in) :: stdout
+
+    real(kind=dp), allocatable, intent(inout) :: fermi_energy_list(:)
+    real(kind=dp), allocatable, intent(inout) :: kpt_latt(:, :)
+    real(kind=dp), intent(in) :: bohr
+    real(kind=dp), intent(inout) :: real_lattice(3, 3)
+    real(kind=dp), intent(inout) :: symmetrize_eps
+
+    character(len=*), intent(in)  :: seedname
+
+    ! local variables
+    character(len=20) :: energy_unit
+    integer :: num_exclude_bands, i
+    logical :: disentanglement
+    logical :: found_fermi_energy
+    logical :: has_kpath
+    logical, intent(inout) :: gamma_only
+    logical, intent(inout) :: lsitesymmetry
+    logical, intent(out) :: lhasproj
+    logical, intent(out) :: use_bloch_phases, cp_pp, calc_only_A
+    real(kind=dp) :: recip_lattice(3, 3), volume, inv_lattice(3, 3)
+
+    if (.not. (w90_calculation%transport .and. tran%read_ht)) then
+      !fixme(jj) consider whether this should be here (should not be read in library mode)
+      !call w90_readwrite_read_eigvals(.false., .false., .false., &
+      !                                w90_calculation%bands_plot .or. w90_calculation%fermi_surface_plot .or. &
+      !                                output_file%write_hr, disentanglement, eig_found, &
+      !                                eigval, w90_calculation%postproc_setup, num_bands, &
+      !                                num_kpts, stdout, seedname, error, comm)
+      !if (allocated(error)) return
+
+      call w90_readwrite_read_num_wann(settings, num_wann, error, comm)
+      if (allocated(error)) return
+
+      call w90_readwrite_read_exclude_bands(settings, exclude_bands, num_exclude_bands, error, comm)
+      if (allocated(error)) return
+
+      call w90_readwrite_read_num_bands(settings, .false., num_bands, num_wann, stdout, error, comm)
+      if (allocated(error)) return
+      disentanglement = (num_bands > num_wann)
+
+      num_proj = num_wann !default no projections specified
+
+      call w90_readwrite_read_mp_grid(settings, mp_grid, num_kpts, error, comm)
+      if (allocated(error)) return
+
+      call w90_readwrite_read_kmesh_data(settings, kmesh_input, error, comm)
+      if (allocated(error)) return
+
+      !call utility_recip_lattice(real_lattice, recip_lattice, volume, error, comm)
+      !if (allocated(error)) return
+
+      !call utility_inverse_mat(real_lattice, inv_lattice)
+
+      call w90_readwrite_read_kpoints(settings, .false., kpt_latt, num_kpts, bohr, error, comm)
+      if (allocated(error)) return
+
+!      call w90_wannier90_readwrite_read_explicit_kpts(settings, w90_calculation, kmesh_info, &
+!                                                      num_kpts, bohr, error, comm)
+!      if (allocated(error)) return
+
+      !call w90_wannier90_readwrite_read_global_kmesh(global_kmesh_set, kmesh_spacing, kmesh, recip_lattice, &
+      !                             stdout, seedname)
+      !call w90_readwrite_read_atoms(settings, atom_data, real_lattice, bohr, error, comm)
+      !if (allocated(error)) return
+
+      call w90_readwrite_read_lattice(settings, real_lattice, recip_lattice, bohr, error, comm)
+      if (allocated(error)) return
+
+      call w90_wannier90_readwrite_read_explicit_kpts(settings, w90_calculation, kmesh_info, &
+                                                      num_kpts, bohr, error, comm)
+      if (allocated(error)) return
+
+      call w90_wannier90_readwrite_read_projections(settings, proj, use_bloch_phases, lhasproj, &
+                                                    wann_control%guiding_centres%enable, &
+                                                    select_proj, num_proj, atom_data, inv_lattice, &
+                                                    num_bands, num_wann, gamma_only, &
+                                                    w90_system%spinors, bohr, stdout, error, comm)
+
+      if (allocated(error)) return
+    endif
+  end subroutine w90_wannier90_readwrite_read_special
 
   !================================================!
   subroutine w90_wannier90_readwrite_read(settings, atom_data, band_plot, dis_control, dis_spheres, &
@@ -128,7 +273,7 @@ contains
     logical, intent(inout) :: lsitesymmetry
     logical, intent(out) :: lhasproj
     logical, intent(out) :: use_bloch_phases, cp_pp, calc_only_A
-    real(kind=dp) :: recip_lattice(3, 3), volume, inv_lattice(3, 3)
+    real(kind=dp) :: recip_lattice(3, 3), volume !, inv_lattice(3, 3)
 
     disentanglement = .false.
     call w90_wannier90_readwrite_read_sym(settings, symmetrize_eps, lsitesymmetry, error, comm)
@@ -152,29 +297,30 @@ contains
     if (allocated(error)) return
 
     if (.not. (w90_calculation%transport .and. tran%read_ht)) then
+
       call w90_readwrite_read_units(settings, print_output%lenconfac, print_output%length_unit, &
                                     energy_unit, bohr, error, comm)
       if (allocated(error)) return
 
-      call w90_readwrite_read_num_wann(settings, num_wann, error, comm)
-      if (allocated(error)) return
+      !call w90_readwrite_read_num_wann(settings, num_wann, error, comm)
+      !if (allocated(error)) return
 
-      call w90_readwrite_read_exclude_bands(settings, exclude_bands, num_exclude_bands, error, comm)
-      if (allocated(error)) return
+      !call w90_readwrite_read_exclude_bands(settings, exclude_bands, num_exclude_bands, error, comm)
+      !if (allocated(error)) return
 
-      call w90_readwrite_read_num_bands(settings, .false., num_bands, num_wann, stdout, error, comm)
-      if (allocated(error)) return
-      disentanglement = (num_bands > num_wann)
+      !call w90_readwrite_read_num_bands(settings, .false., num_bands, num_wann, stdout, error, comm)
+      !if (allocated(error)) return
+      !disentanglement = (num_bands > num_wann)
 
-      call w90_readwrite_read_lattice(settings, real_lattice, bohr, error, comm)
-      if (allocated(error)) return
+      !call w90_readwrite_read_lattice(settings, real_lattice, bohr, error, comm)
+      !if (allocated(error)) return
 
       call w90_wannier90_readwrite_read_wannierise(settings, wann_control, num_wann, &
                                                    w90_extra_io%ccentres_frac, stdout, error, comm)
       if (allocated(error)) return
 
-      call w90_readwrite_read_mp_grid(settings, .false., mp_grid, num_kpts, error, comm)
-      if (allocated(error)) return
+      !call w90_readwrite_read_mp_grid(settings, .false., mp_grid, num_kpts, error, comm)
+      !if (allocated(error)) return
 
       call w90_readwrite_read_gamma_only(settings, gamma_only, num_kpts, error, comm)
       if (allocated(error)) return
@@ -251,32 +397,31 @@ contains
                                                     error, comm)
       if (allocated(error)) return
 
-      call w90_readwrite_read_kmesh_data(settings, kmesh_input, error, comm)
-      if (allocated(error)) return
+      !call w90_readwrite_read_kmesh_data(settings, kmesh_input, error, comm)
+      !if (allocated(error)) return
 
-      call utility_recip_lattice(real_lattice, recip_lattice, volume, error, comm)
-      if (allocated(error)) return
+      !call utility_recip_lattice(real_lattice, recip_lattice, volume, error, comm)
+      !if (allocated(error)) return
+      !call utility_inverse_mat(real_lattice, inv_lattice)
 
-      call utility_inverse_mat(real_lattice, inv_lattice)
+      !call w90_readwrite_read_kpoints(settings, .false., kpt_latt, num_kpts, bohr, error, comm)
+      !if (allocated(error)) return
 
-      call w90_readwrite_read_kpoints(settings, .false., kpt_latt, num_kpts, bohr, error, comm)
-      if (allocated(error)) return
-
-      call w90_wannier90_readwrite_read_explicit_kpts(settings, w90_calculation, kmesh_info, &
-                                                      num_kpts, bohr, error, comm)
-      if (allocated(error)) return
+      !call w90_wannier90_readwrite_read_explicit_kpts(settings, w90_calculation, kmesh_info, &
+      !                                                num_kpts, bohr, error, comm)
+      !if (allocated(error)) return
 
       !call w90_wannier90_readwrite_read_global_kmesh(global_kmesh_set, kmesh_spacing, kmesh, recip_lattice, &
       !                             stdout, seedname)
       call w90_readwrite_read_atoms(settings, atom_data, real_lattice, bohr, error, comm)
       if (allocated(error)) return
 
-      call w90_wannier90_readwrite_read_projections(settings, proj, use_bloch_phases, lhasproj, &
-                                                    wann_control%guiding_centres%enable, &
-                                                    select_proj, num_proj, atom_data, inv_lattice, &
-                                                    num_bands, num_wann, gamma_only, &
-                                                    w90_system%spinors, bohr, stdout, error, comm)
-      if (allocated(error)) return
+      !    call w90_wannier90_readwrite_read_projections(settings, proj, use_bloch_phases, lhasproj, &
+      !                                                  wann_control%guiding_centres%enable, &
+      !                                                  select_proj, num_proj, atom_data, inv_lattice, &
+      !                                                  num_bands, num_wann, gamma_only, &
+      !                                                  w90_system%spinors, bohr, stdout, error, comm)
+      !    if (allocated(error)) return
 
       if (allocated(proj)) then
         if (allocated(wann_control%guiding_centres%centres)) &

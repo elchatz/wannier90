@@ -171,8 +171,12 @@ contains
                                       error, comm)
     if (allocated(error)) return
     disentanglement = (num_bands > num_wann)
-    call w90_readwrite_read_mp_grid(settings, effective_model, mp_grid, num_kpts, error, comm)
-    if (allocated(error)) return
+
+    if (.not. effective_model) then
+      call w90_readwrite_read_mp_grid(settings, mp_grid, num_kpts, error, comm)
+      if (allocated(error)) return
+    endif
+
     call w90_readwrite_read_gamma_only(settings, gamma_only, num_kpts, error, comm)
     if (allocated(error)) return
     call w90_readwrite_read_system(settings, w90_system, error, comm)
@@ -236,11 +240,9 @@ contains
                                                    fermi_energy_list, eigval, pw90_extra_io, &
                                                    error, comm)
     if (allocated(error)) return
-    call w90_readwrite_read_lattice(settings, real_lattice, bohr, error, comm)
+    call w90_readwrite_read_lattice(settings, real_lattice, recip_lattice, bohr, error, comm)
     if (allocated(error)) return
     call w90_readwrite_read_kmesh_data(settings, kmesh_input, error, comm)
-    if (allocated(error)) return
-    call utility_recip_lattice(real_lattice, recip_lattice, volume, error, comm)
     if (allocated(error)) return
     call w90_readwrite_read_kpoints(settings, effective_model, kpt_latt, num_kpts, bohr, &
                                     error, comm)
