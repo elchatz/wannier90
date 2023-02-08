@@ -60,7 +60,6 @@ program ok
   nw = 4
   nkabc = (/2, 2, 2/)
   nk = nkabc(1)*nkabc(2)*nkabc(3)
-  write (*, *) "nb, nw, nk: ", nb, nw, nk
 
   ! MPI
   comm%comm = mpi_comm_world
@@ -75,22 +74,22 @@ program ok
   call set_kpoint_distribution(w90main, distk, stdout, stderr, ierr, comm)
 
   ! required settings
-  call set_option('num_wann', nw)
-  call set_option('num_bands', nb)
-  call set_option('num_kpts', nk)  ! why are we providing nk and nkabc and kpcart (aka kpt_latt)?
-  call set_option('mp_grid', nkabc)
+  call set_option(w90main, 'num_wann', nw)
+  call set_option(w90main, 'num_bands', nb)
+  call set_option(w90main, 'num_kpts', nk)  ! why are we providing nk and nkabc and kpcart (aka kpt_latt)?
+  call set_option(w90main, 'mp_grid', nkabc)
   call read_kp(nk, kpcart)
-  call set_option('kpoints', kpcart)
+  call set_option(w90main, 'kpoints', kpcart)
 
   ! xtal
   call read_cell(nbas, uccart, xcart)
-  call set_option('unit_cell_cart', uccart) ! atomic positions not used
+  call set_option(w90main, 'unit_cell_cart', uccart) ! atomic positions not used
 
   ! optional settings (copied from ".win" file)
-  call set_option('num_print_cycles', 13)
-  call set_option('use_ws_distance', .false.)
-  call set_option('search_shells', 12)
-  call set_option('num_iter', 100)
+  call set_option(w90main, 'num_print_cycles', 13)
+  call set_option(w90main, 'use_ws_distance', .false.)
+  call set_option(w90main, 'search_shells', 12)
+  call set_option(w90main, 'num_iter', 100)
 
   ! apply settings (and discard settings store)
   call input_setopt(w90main, w90dat, 'wannier', stdout, stderr, ierr, comm)
@@ -99,7 +98,7 @@ program ok
   ! must be done before reading overlaps
   call create_kmesh(w90main, stdout, stderr, ierr, comm)
   nn = w90main%kmesh_info%nntot
-  write (*, *) "nn: ", nn
+  write (*, *) "nb, nw, nk, nn: ", nb, nw, nk, nn
 
   ! setup all matrices
   allocate (m(nw, nw, nn, nk)) ! m also known as m_matrix_local

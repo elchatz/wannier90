@@ -75,7 +75,6 @@ program ok
   nkabc = (/4, 4, 4/)
   exclude = (/1, 2, 3, 4, 5/)
   nk = nkabc(1)*nkabc(2)*nkabc(3)
-  write (*, *) "nb, nw, nk: ", nb, nw, nk
 
   ! MPI
   comm%comm = mpi_comm_world
@@ -89,26 +88,25 @@ program ok
   call set_kpoint_distribution(w90main, distk, stdout, stderr, ierr, comm)
 
   ! required settings
-  call set_option('num_wann', nw)
-  call set_option('num_bands', nb)
-  call set_option('num_kpts', nk)
+  call set_option(w90main, 'num_wann', nw)
+  call set_option(w90main, 'num_bands', nb)
+  call set_option(w90main, 'num_kpts', nk)
   call read_cell(nbas, uccart, xcart)
-  call set_option('unit_cell_cart', uccart)
-  call set_option('mp_grid', nkabc)
+  call set_option(w90main, 'unit_cell_cart', uccart)
+  call set_option(w90main, 'mp_grid', nkabc)
   call read_kp(nk, kpcart)
-  call set_option('kpoints', kpcart)
+  call set_option(w90main, 'kpoints', kpcart)
+  call set_option(w90main, 'dis_froz_max', 14.0d0) ! not optional for disentanglement? fixme
 
   ! optional settings
-  call set_option('conv_tol', 1.d-10)
-  call set_option('conv_window', 3)
-  call set_option('dis_froz_max', 14.0d0) ! not optional for disentanglement? fixme
-  call set_option('dis_mix_ratio', 1.d0)
-  call set_option('dis_num_iter', 1200)
-  call set_option('dis_win_max', 24.d0)
-  call set_option('num_iter', 1000)
-  call set_option('num_print_cycles', 40)
-  call set_option('exclude_bands', exclude)
-  !call set_option('iprint', 5)
+  !call set_option(w90main, 'conv_tol', 1.d-10)
+  !call set_option(w90main, 'conv_window', 3)
+  !call set_option(w90main, 'dis_mix_ratio', 1.d0)
+  !call set_option(w90main, 'dis_num_iter', 1200)
+  !call set_option(w90main, 'dis_win_max', 24.d0)
+  call set_option(w90main, 'num_iter', 1000)
+  !call set_option(w90main, 'num_print_cycles', 40)
+  call set_option(w90main, 'exclude_bands', exclude)
 
   ! apply settings (and discard settings store)
   call input_setopt(w90main, w90dat, 'gaas', stdout, stderr, ierr, comm)
@@ -117,7 +115,7 @@ program ok
   ! must be done before reading overlaps
   call create_kmesh(w90main, stdout, stderr, ierr, comm)
   nn = w90main%kmesh_info%nntot
-  write (*, *) "nn: ", nn
+  write (*, *) "nb, nw, nk, nn: ", nb, nw, nk, nn
 
   ! setup all matrices
   allocate (a(nb, nw, nk))
